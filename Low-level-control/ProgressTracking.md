@@ -131,13 +131,25 @@
             - set measure_task_state = TRIGGER_WAIT
         
 - The SortingTask:
-    - Similarly, its state when started is sorting_task_state = TRIGGER_WAIT, the sensor that trigger this task is called the sorting sensor
+    - Similarly, its state when started is sorting_task_state = TRIGGER_WAIT, the sensor that trigger this task is called the sorting sensor, the check_sorting_sensor()
+    will return true if the fruit block the sensor
     - When sorting_task_state = TRIGGER_WAIT:
         - continuously read the sorting_type of the fruit (using the sorting_fruit_pointer), if the sorting_type = 0, it is not sorted yet, 
-        so, give a small delay and do nothing, if it is not 1, or 2 then spin the sorting bin (servo motor) to the correct type.
-        - wait until the sorting sensor is block by the fruit.
+        so, give a small delay and do nothing, if it is  1, or 2 then spin the sorting bin (servo motor) to the correct type.
+        - continuously check if the sensor is blocked
         - when the sorting sensor is blocked:
             - set the current_fruit_state = SORTING_PASSED using the sorting_fruit_pointer
+            - send the information of the queue with the data = 0
+            - reset the fruit:
+                - id = furthest_fruit
+                - previous_fruit_state: NOT_ENGAGED
+                - current_fruit_state: NOT_ENGAGED
+                - dia_measure = 0
+                - is_centered: false
+                - is_sorted: false
+                - sorting_type = 0
+                - point_measure_done = false
+            - then it increase the furthest_fruit by one
             - the sorting_fruit_id is increased by one
             - search in the fruit_list and then change the sorting_fruit_pointer to point at the fruit_object that has the current sorting_fruit_id
 
