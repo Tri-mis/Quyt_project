@@ -13,39 +13,36 @@ void Input_Task(void* parameter)
         {
             case TRIGGER_WAIT:
                 // Wait for the fruit to block the trigger sensor
-                if (check_trigger(INPUT_SENSOR_PIN)) 
+                if (check_trigger(INPUT_SENSOR_PIN) && 
+                    input_fruit_pointer != nullptr &&
+                    input_fruit_pointer->current_fruit_state == NOT_ENGAGED) 
                 {
-                    if (input_fruit_pointer != nullptr) 
-                    {
-                        input_fruit_pointer->current_fruit_state = INPUT_ENTERED;
-                        send_fruit_message(input_fruit_pointer->id, input_fruit_pointer->current_fruit_state, -1);
-                    }
+                    input_fruit_pointer->current_fruit_state = INPUT_ENTERED;
+                    send_fruit_message(input_fruit_pointer, NO_PAYLOAD);
                     input_task_state = MEASURING_DIA;
                 }
                 break;
 
-            case MEASURING_DIA: 
+            case MEASURING_DIA:
                 trigger_state = check_trigger(INPUT_SENSOR_PIN);
 
                 // Start timing when fruit enters
-                if (!measuring && trigger_state == true) 
+                if (measuring == false && trigger_state == true) 
                 {
                     measuring = true;
                     start_time = millis();
                 }
 
                 // Stop timing when fruit leaves
-                if (measuring && trigger_state == false) 
+                if (measuring == true && trigger_state == false) 
                 {
                     stop_time = millis();
                     measuring = false;
 
-                    if (input_fruit_pointer != nullptr) 
-                    {
-                        input_fruit_pointer->dia_measure = stop_time - start_time;
-                        input_fruit_pointer->current_fruit_state = INPUT_PASSED;
-                        send_fruit_message(input_fruit_pointer->id, input_fruit_pointer->current_fruit_state, input_fruit_pointer->dia_measure);
-                    }
+                    // set the diameter and fruit state then report throught UART
+                    input_fruit_pointer->dia_measure = stop_time - start_time;
+                    input_fruit_pointer->current_fruit_state = INPUT_PASSED;
+                    send_fruit_message(input_fruit_pointer, input_fruit_pointer->dia_measure);
 
                     // Move to next fruit
                     input_fruit_id++;
@@ -54,6 +51,7 @@ void Input_Task(void* parameter)
                     // Close the input gate (servo control)
                     gate_close();
 
+                    // update the task
                     input_task_state = TRIGGER_WAIT;
                 }
                 break;
@@ -85,110 +83,110 @@ void Measure_Task(void* parameter)
         {
             case TRIGGER_WAIT:
             {
-                if (check_trigger(MEASURE_SENSOR_PIN))
+                if (check_trigger(MEASURE_SENSOR_PIN) && 
+                    measure_fruit_pointer != nullptr && 
+                    measure_fruit_pointer->current_fruit_state == INPUT_PASSED)
                 {
-                    if (measure_fruit_pointer != nullptr)
-                    {
-                        measure_fruit_pointer->current_fruit_state = MEASURE_ENTERED;
-                        send_fruit_message(measure_fruit_pointer->id, measure_fruit_pointer->current_fruit_state, -1);
-                    }
-                    measure_task_state = CENTERING;
+                    // change fruit state and report through UART
+                    measure_fruit_pointer->current_fruit_state = MEASURE_ENTERED;
+                    send_fruit_message(measure_fruit_pointer, NO_PAYLOAD);
                 }
+
                 break;
             }
 
             case CENTERING:
 
-                // Start timing to wait until fruit is halfway through diameter sensor
-                // Use fruit's dia_measure (in ms) to determine half time
-                if (measure_fruit_pointer == nullptr)
-                {
-                    // Nothing to do if pointer invalid — go back to wait
-                    measure_task_state = TRIGGER_WAIT;
-                    break;
-                }
-
                 // Start measuring if not already
-                if (!measuring)
+                if (measuring == false)
                 {
+                    // set measureing flag and start timming
                     measuring = true;
                     start_time = millis();
                 }
 
-                // If elapsed time >= half of dia_measure, stop conveyor and move to spectral measurement
+                // calculate elapsed time
                 elapsed = millis() - start_time;
-                half_time = (unsigned long)(measure_fruit_pointer->dia_measure / 2);
 
-                if (elapsed >= half_time)
+                // If elapsed time * 2 >= dia_measure, stop conveyor
+                if (elapsed * 2 >= measure_fruit_pointer->dia_measure)
                 {
                     // stop conveyor
                     conveyor_stop();
 
-                    if (measure_fruit_pointer != nullptr)
-                    {
-                        measure_fruit_pointer->current_fruit_state = MEASURE_PROCESSING;
-                        send_fruit_message(measure_fruit_pointer->id, measure_fruit_pointer->current_fruit_state, -1);
-                    }
+                    // change fruit state and report through UART
+                    measure_fruit_pointer->current_fruit_state = MEASURE_PROCESSING;
+                    send_fruit_message(measure_fruit_pointer, NO_PAYLOAD);
 
                     // Reset measuring flag for next use
                     measuring = false;
 
+                    // change state of task
                     measure_task_state = MEASURING_SPECTRAL;
                 }
+
                 break;
 
             case MEASURING_SPECTRAL:
 
-                if (measure_fruit_pointer == nullptr)
-                {
-                    measure_task_state = TRIGGER_WAIT;
-                    break;
-                }
-
-                for (int i = 1; i <= preset_measure_times; i++)
+                for (int current_point = 1; 
+                    current_point <= preset_measure_times; 
+                    current_point++)
                 {
                     // actual measurement point start from 1
-                    measure_fruit_pointer->point_measured = i;
+                    measure_fruit_pointer->point_measured = current_point;
+
                     // Prepare to take measurement
                     measure_fruit_pointer->point_measure_done = false;
 
-                    gripper_position_fruit(i);
+                    // prepare for the scan according to the current point to scan
+                    gripper_position_fruit(current_point);
                     probe_attach();
 
-                    // send the fruit measuring point number, expect respone to confirm the measuring is done and set the point_measure_done to true
-                    send_fruit_message(measure_fruit_pointer->id, measure_fruit_pointer->current_fruit_state, measure_fruit_pointer->point_measured);
+                    //expect respone with the same message to confirm the measureing is done
+                    send_fruit_message(measure_fruit_pointer, current_point);
 
-                    while (!measure_fruit_pointer->point_measure_done)
+                    //wait until UART task set the point_measure_done to true
+                    while (measure_fruit_pointer->point_measure_done == false)
                     {
-                        // A short delay
-                        vTaskDelay(10 / portTICK_PERIOD_MS);
+                        // prevent watchdog reset
+                        vTaskDelay(10 / portTICK_PERIOD_MS); 
                     }
 
-                    probe_deattach(i);
+                    // deattach probe but not all the way out
+                    probe_deattach(current_point);
                 }
 
-                gripper_home(1);
+                // release the current and get ready for the next fruit
+                gripper_release();
+                gripper_home();
                 conveyor_run();
                 gate_open();
 
                 // Update fruit state to MEASURE_PASSED
                 measure_fruit_pointer->current_fruit_state = MEASURE_PASSED;
-                send_fruit_message(measure_fruit_pointer->id, measure_fruit_pointer->current_fruit_state, -1); // when the main loop receive this message, it should response with the type of the fruit
+
+                // expect response with the type of the fruit
+                send_fruit_message(measure_fruit_pointer, NO_PAYLOAD);
 
                 // Move to next fruit
                 measure_fruit_id++;
                 measure_fruit_pointer = search_fruit(measure_fruit_id);
 
+                // change back state to trigger wait
                 measure_task_state = TRIGGER_WAIT;
 
                 break;
 
             default:
+
                 // Undefined state
                 vTaskDelay(10 / portTICK_PERIOD_MS);
+
                 break;
         }
-        vTaskDelay(5 / portTICK_PERIOD_MS); // keep loop cooperative
+        // keep loop cooperative
+        vTaskDelay(5 / portTICK_PERIOD_MS); 
     }
 }
 
@@ -206,8 +204,7 @@ void Sorting_Task(void* parameter)
         {
             case TRIGGER_WAIT:
             {
-
-                if (sorting_fruit_pointer == nullptr)
+                if (sorting_fruit_pointer == nullptr )
                 {
                     vTaskDelay(10 / portTICK_PERIOD_MS);
                     break;
@@ -226,24 +223,26 @@ void Sorting_Task(void* parameter)
                     else if (sorting_fruit_pointer->sorting_type == 2) sorting_bin_write(SORTING_ANGLE_TYPE_2);
                 }
 
+                // Get the current trigger state
                 current_trigger_state = check_trigger(SORTING_SENSOR_PIN);
 
                 // Check if fruit is detected at sorting sensor
-                if (current_trigger_state != old_trigger_state)
+                if (current_trigger_state != old_trigger_state &&
+                    current_trigger_state == true &&
+                    sorting_fruit_pointer -> current_fruit_state == MEASURE_PASSED)
                 {
-                    if (current_trigger_state )
-                    {
-                        // Update fruit state
-                        sorting_fruit_pointer->current_fruit_state = SORTING_PASSED;
-                        send_fruit_message( sorting_fruit_pointer->id, sorting_fruit_pointer->current_fruit_state, sorting_fruit_pointer->sorting_type);
+                    // Update fruit state and report throught UART
+                    sorting_fruit_pointer->current_fruit_state = SORTING_PASSED;
+                    send_fruit_message(sorting_fruit_pointer, sorting_fruit_pointer->sorting_type);
 
-                        // Reset fruit data for reuse
-                        reset_fruit(sorting_fruit_pointer);
+                    // Reset fruit data for reuse
+                    reset_fruit(sorting_fruit_pointer);
 
-                        // Move to next fruit in process
-                        sorting_fruit_id++;
-                        sorting_fruit_pointer = search_fruit(sorting_fruit_id);
-                    }
+                    // Move to next fruit in process
+                    sorting_fruit_id++;
+                    sorting_fruit_pointer = search_fruit(sorting_fruit_id);
+                    
+                    // Update trigger state
                     old_trigger_state = current_trigger_state;
                 }
                 break;

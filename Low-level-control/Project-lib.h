@@ -16,25 +16,34 @@
 #define CONVEYOR_MOTOR_PIN 26
 
 #define GATE_SERVO_PIN 27
-#define GATE_CLOSE_ANGLE 0
+#define GATE_CLOSE_ANGLE 180
 #define GATE_OPEN_ANGLE 90
 
 #define GRIPPER_HOMING_SWITCH_PIN 13
-#define GRIPPER_STEPPER_PUL_PIN 23
-#define GRIPPER_STEPPER_DIR_PIN 22
+#define GRIPPER_STEPPER_PUL_PIN 16
+#define GRIPPER_STEPPER_DIR_PIN 17
+#define GRIPPER_STEPPER_ENABLE_PIN 14
+
 #define GRIPPER_CYLINDER_GRIP_VALVE_PIN 21
 #define GRIPPER_CYLINDER_RELEASE_VALVE_PIN 19
-#define GRIPPER_DETECT_CONTACT_SWITCH_PIN 32
+#define GRIPPER_DETECT_CONTACT_SWITCH_PIN_1 22
+#define GRIPPER_DETECT_CONTACT_SWITCH_PIN_2 18
 
-#define PROBE_CYLINDER_EXTEND_VALVE_PIN 17
-#define PROBE_CYLINDER_RETRACT_VALVE_PIN 16
-#define PROBE_DETECT_CONTACT_SWITCH_PIN 33
+#define PROBE_CYLINDER_EXTEND_VALVE_PIN 32
+#define PROBE_CYLINDER_RETRACT_VALVE_PIN 33
+#define PROBE_DETECT_CONTACT_SWITCH_PIN 23
 
 #define SORTING_SERVO_PIN 25
+
 #define SORTING_ANGLE_TYPE_1 0
-#define SORTING_ANGLE_TYPE_2 90
+#define SORTING_ANGLE_TYPE_2 180
 
 #define PRESET_ANGLE_BETWEEN_TWO_MEASUREMENT 10
+#define STEPPER_PULSE_IN_uS 8000
+
+
+#define NO_PAYLOAD -1
+#define FRUIT_LIST_LENGTH 5
 
 //============================================================== STATES ==============================================================//
 enum Fruit_state 
@@ -74,7 +83,7 @@ struct Fruit_data
 {
     long fruit_id;           // ID of the fruit
     Fruit_state fruit_state; // State of the fruit
-    int fruit_data;          // Data value associated with the fruit
+    int payload;          // Data value associated with the fruit
 };
 
 //=============================================================== MOTOR CLASS ==============================================================//
@@ -139,6 +148,7 @@ class myStepper
         int pul_pin;
         int dir_pin;
         int home_switch_pin;
+        int enable_pin;
 
         long current_position;    // current position in steps
         long target_position;     // target position in steps
@@ -149,8 +159,8 @@ class myStepper
         int pulse_delay_us;       // microsecond delay between steps
 
     public:
-        myStepper(int pul_pin, int dir_pin, int home_switch_pin, float steps_per_rev = 200.0f, float mm_per_rev = 8.0f, int pulse_delay_us = 1000)
-        : pul_pin(pul_pin), dir_pin(dir_pin), home_switch_pin(home_switch_pin),
+        myStepper(int pul_pin, int dir_pin, int enable_pin, int home_switch_pin, float steps_per_rev = 200.0f, float mm_per_rev = 8.0f, int pulse_delay_us = STEPPER_PULSE_IN_uS)
+        : pul_pin(pul_pin), dir_pin(dir_pin), home_switch_pin(home_switch_pin), enable_pin(enable_pin),
         steps_per_rev(steps_per_rev), mm_per_rev(mm_per_rev), pulse_delay_us(pulse_delay_us)
         {
             current_position = 0;
@@ -158,11 +168,13 @@ class myStepper
 
             pinMode(pul_pin, OUTPUT);
             pinMode(dir_pin, OUTPUT);
+            pinMode(enable_pin, OUTPUT);
             pinMode(home_switch_pin, INPUT_PULLUP);
         }
 
         void home(bool homing_dir)
         {
+            digitalWrite(enable_pin, LOW);
             Serial.println("Homing...");
 
             digitalWrite(dir_pin, homing_dir ? HIGH : LOW);
@@ -244,29 +256,46 @@ class myStepper
         }
 };
 //=============================================================== SERVO CLASS ==============================================================//
+
 class myServo
 {
     private:
-        Servo servo;
         int servo_pin;
+        double freq = 50.0;              // 50 Hz = 20 ms period
+        int resolution_bits = 16;        // Max resolution for stable 50 Hz
+        uint32_t max_duty;               // 2^resolution_bits - 1
+
+        // Pulse width range (µs)
+        const int min_pulse_us = 1000;   // 1 ms → 0°
+        const int max_pulse_us = 2000;   // 2 ms → 180°
 
     public:
         myServo(int pin)
         {
             servo_pin = pin;
-            servo.attach(servo_pin);   // Attach during construction
+            // Configure LEDC pin, frequency, and resolution
+            ledcAttach(servo_pin, freq, resolution_bits);
+            max_duty = (1 << resolution_bits) - 1;
         }
 
         void set_angle(int angle)
         {
-            servo.write(constrain(angle, 0, 180));
+            angle = constrain(angle, 0, 180);
+
+            // Map angle → pulse width (1000–2000 µs)
+            int pulse_us = map(angle, 0, 180, min_pulse_us, max_pulse_us);
+
+            // Convert pulse width to duty cycle
+            const int period_us = 1000000 / freq; // 20,000 µs at 50 Hz
+            uint32_t duty = (uint32_t)((pulse_us * (double)max_duty) / period_us);
+
+            ledcWrite(servo_pin, duty);
         }
 };
 
 //============================================================== VARIABLE DECORATION ==============================================================//
 extern int preset_measure_times;
 extern long initial_fruit;
-extern long furthest_fruit;
 extern int preset_conveyor_speed;
 
 extern long input_fruit_id;
@@ -284,7 +313,7 @@ extern Task_state input_task_state;
 extern Task_state measure_task_state;
 extern Task_state sorting_task_state;
 
-extern Fruit fruit_list[5];
+extern Fruit fruit_list[FRUIT_LIST_LENGTH];
 
 extern myMotor conveyor_motor;
 extern myStepper gripper_stepper;
@@ -297,16 +326,17 @@ extern myPneumaticValve gripper_valve;
 Fruit* search_fruit(long fruit_id);
 void reset_fruit(Fruit* f);
 void initialize_system();
-void send_fruit_message(long fruit_id, Fruit_state fruit_state, int fruit_data);
+void send_fruit_message(Fruit *fruit, int payload);
 void system_start();
 
 
 bool check_trigger(int sensor_pin);
 void conveyor_run();
 void conveyor_stop();
-void gripper_position_fruit(int measure_position);
 void gripper_release();
-void gripper_home(bool homing_direction);
+void gripper_grip();
+void gripper_position_fruit(int measure_position);
+void gripper_home();
 void probe_attach();
 void probe_deattach(int measure_position);
 void sorting_bin_write(int angle);

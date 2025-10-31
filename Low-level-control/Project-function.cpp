@@ -2,7 +2,7 @@
 
 Fruit* search_fruit(long fruit_id) 
 {
-    for (int i = 0; i < 5; i++) 
+    for (int i = 0; i < FRUIT_LIST_LENGTH; i++) 
     {
         if (fruit_list[i].id == fruit_id) 
         {
@@ -15,8 +15,7 @@ Fruit* search_fruit(long fruit_id)
 void reset_fruit(Fruit* f)
 {
     if (f == nullptr) return;
-    *f = {furthest_fruit, NOT_ENGAGED, 0, false, 0, false, false, 0};
-    furthest_fruit++;
+    *f = {f->id + (sizeof(fruit_list) / sizeof(fruit_list[0])), NOT_ENGAGED, 0, false, 0, false, false, 0};
 }
 
 void process_sending_queue()
@@ -44,19 +43,28 @@ void process_sending_queue()
         Serial.print("|");
         Serial.print(state_str);
         Serial.print("|");
-        Serial.println(msg.fruit_data);
+        Serial.println(msg.payload);
     }
 }
 
 void initialize_system() 
 {
-    // Send initialization request to head computer
-    Serial.println("initialize system");
 
-    // Wait for confirmation message: "confirm|initial_fruit_id|preset_measurement|preset_conveyor_speed"
     while (!Serial.available()) delay(10);
 
     String received_message = Serial.readStringUntil('\n');
+    received_message.trim();
+    
+    if (received_message.startsWith("wake?")) 
+    {
+        Serial.println("awake");
+        Serial.println("initialize system");
+    }
+    
+    // Wait for confirmation message: "confirm|initial_fruit_id|preset_measurement_times|preset_conveyor_speed"
+    while (!Serial.available()) delay(10);
+
+    received_message = Serial.readStringUntil('\n');
     received_message.trim();
 
     // Example expected message: "confirm|3|12|50"
@@ -77,10 +85,8 @@ void initialize_system()
         if (token != NULL) preset_conveyor_speed = atoi(token);
 
         // Assign fruit IDs sequentially
-        for (int i = 0; i < 5; i++) fruit_list[i].id = initial_fruit + i;
+        for (int i = 0; i < FRUIT_LIST_LENGTH; i++) fruit_list[i].id = initial_fruit + i;
 
-        // Set furthest fruit
-        furthest_fruit = fruit_list[4].id + 1;
 
         // Set current fruit IDs
         input_fruit_id = initial_fruit;
@@ -95,46 +101,34 @@ void initialize_system()
         // Sending queue initialization
         messages_sending_queue = xQueueCreate(15, sizeof(Fruit_data));
 
-        Serial.println("System initialized successfully. Please start!");
+        Serial.println("initial fruit: " + String(initial_fruit) + 
+                    " | preset_measure_times: " + String(preset_measure_times) + 
+                    " | preset_conveyor_speed: " + String(preset_conveyor_speed));
+        Serial.println("System initialized successfully! Starting system....");
+
+        // Initialize hardware
+        hardware_init();
+        delay(1000);
+        
+        // Start all tasks
+        system_start();
+        delay(1000);
+
+        Serial.println("System started");
     } 
     else 
     {
         Serial.println("Initialization failed: invalid confirmation message.");
     }
 
-    while (true) 
-    {
-        if (Serial.available()) 
-        {
-            String cmd = Serial.readStringUntil('\n');
-            cmd.trim();
-
-            if (cmd.equalsIgnoreCase("system start")) 
-            {
-                Serial.println("Starting system...");
-
-                // Hardware_initialization
-                hardware_init();
-                // Start all tasks
-                system_start();
-
-                Serial.println("System started");
-                break;
-            }
-        }
-
-        delay(10);
-    }
 }
 
-void send_fruit_message(long fruit_id, Fruit_state fruit_state, int fruit_data)
+void send_fruit_message(Fruit *fruit, int payload)
 {
-    if (messages_sending_queue == nullptr) return;
-
     Fruit_data msg;
-    msg.fruit_id = fruit_id;
-    msg.fruit_state = fruit_state;
-    msg.fruit_data = fruit_data;
+    msg.fruit_id = fruit -> id;
+    msg.fruit_state = fruit -> current_fruit_state;
+    msg.payload = payload;
 
     xQueueSend(messages_sending_queue, &msg, 0);
 }
@@ -144,13 +138,10 @@ void hardware_init()
     pinMode(INPUT_SENSOR_PIN, INPUT);
     pinMode(MEASURE_SENSOR_PIN, INPUT);
     pinMode(SORTING_SENSOR_PIN, INPUT);
-    pinMode(GRIPPER_DETECT_CONTACT_SWITCH_PIN, INPUT_PULLUP);
+    pinMode(GRIPPER_DETECT_CONTACT_SWITCH_PIN_1, INPUT_PULLUP);
+    pinMode(GRIPPER_DETECT_CONTACT_SWITCH_PIN_2, INPUT_PULLUP);
     pinMode(PROBE_DETECT_CONTACT_SWITCH_PIN, INPUT_PULLUP);
     pinMode(GRIPPER_HOMING_SWITCH_PIN, INPUT_PULLUP);
-
-    gripper_home(1);
-    conveyor_run();
-    
 }
 
 void system_start()
@@ -161,6 +152,13 @@ void system_start()
     xTaskCreatePinnedToCore(UartReceiveTask, "UartReceiveTask", 4096, NULL, 1, NULL, 1);
 
     delay(200);
+
+    gripper_release();
+    probe_valve.position_B();
+    gate_open();
+    sorting_bin_write((SORTING_ANGLE_TYPE_1 + SORTING_ANGLE_TYPE_2) / 2);
+    gripper_home();
+    conveyor_run();
 }
 
 bool check_trigger(int sensor_pin)
@@ -178,31 +176,61 @@ void conveyor_stop()
     conveyor_motor.run(0);
 }
 
-void gripper_position_fruit(int measure_position)
+void gripper_position_fruit(int current_point)
 {
-    
-    if (measure_position == 1)
+    if ((preset_measure_times % 4) == 0)
     {
-        gripper_valve.position_A();
-        while (check_trigger(GRIPPER_DETECT_CONTACT_SWITCH_PIN) == false) vTaskDelay(10 / portTICK_PERIOD_MS);
-        gripper_valve.mid_position();
+        if (current_point = 1)
+        {
+            gripper_grip();
+        }
+        else if (current_point > (preset_measure_times / 4) && 
+                current_point % (preset_measure_times / 4) == 1)
+        {
+            gripper_stepper.run_by_angle((float) (90 - PRESET_ANGLE_BETWEEN_TWO_MEASUREMENT), true);
+            gripper_release();
+            gripper_stepper.run_by_angle(0, false);
+
+            gripper_grip();
+            gripper_valve.mid_position();
+        }
+        else gripper_stepper.run_by_angle((float)PRESET_ANGLE_BETWEEN_TWO_MEASUREMENT, true);
     }
     else
     {
-        if ((measure_position % (preset_measure_times / 4)) == 0) gripper_stepper.run_by_angle((float) (90 - PRESET_ANGLE_BETWEEN_TWO_MEASUREMENT), true);
+        if (current_point = 1)
+        {
+            gripper_valve.position_A();
+            while (check_trigger(GRIPPER_DETECT_CONTACT_SWITCH_PIN_1) == false || 
+                check_trigger(GRIPPER_DETECT_CONTACT_SWITCH_PIN_2) == false) 
+                vTaskDelay(10 / portTICK_PERIOD_MS);
+            gripper_valve.mid_position();
+        }
         else gripper_stepper.run_by_angle((float)PRESET_ANGLE_BETWEEN_TWO_MEASUREMENT, true);
     }
-    
 }
 
 void gripper_release()
 {
     gripper_valve.position_B();
+    while (check_trigger(GRIPPER_DETECT_CONTACT_SWITCH_PIN_1) == true || 
+        check_trigger(GRIPPER_DETECT_CONTACT_SWITCH_PIN_2) == true) 
+        vTaskDelay(10 / portTICK_PERIOD_MS);
+    gripper_valve.mid_position();
 }
 
-void gripper_home(bool homing_direction)
+void gripper_grip()
 {
-    gripper_stepper.home(homing_direction);
+    gripper_valve.position_A();
+    while (check_trigger(GRIPPER_DETECT_CONTACT_SWITCH_PIN_1) == false || 
+        check_trigger(GRIPPER_DETECT_CONTACT_SWITCH_PIN_2) == false) 
+        vTaskDelay(10 / portTICK_PERIOD_MS);
+    gripper_valve.mid_position();
+}
+
+void gripper_home()
+{
+    gripper_stepper.home(-1);
 }
 
 void probe_attach()
@@ -221,7 +249,7 @@ void probe_deattach(int measure_position)
     else
     {
         probe_valve.position_B();
-        vTaskDelay(1000 / portTICK_PERIOD_MS);
+        while (check_trigger(PROBE_DETECT_CONTACT_SWITCH_PIN) == true) vTaskDelay(10 / portTICK_PERIOD_MS);
         probe_valve.mid_position();
     }
 }
