@@ -90,6 +90,8 @@ void Measure_Task(void* parameter)
                     // change fruit state and report through UART
                     measure_fruit_pointer->current_fruit_state = MEASURE_ENTERED;
                     send_fruit_message(measure_fruit_pointer, NO_PAYLOAD);
+
+                    measure_task_state = CENTERING;
                 }
 
                 break;

@@ -180,13 +180,16 @@ void gripper_position_fruit(int current_point)
 {
     if ((preset_measure_times % 4) == 0)
     {
-        if (current_point = 1)
+        Serial.println("(%4 == 0)point: " + String(current_point));
+        if (current_point == 1)
         {
+            Serial.println("point 1 entered");
             gripper_grip();
         }
         else if (current_point > (preset_measure_times / 4) && 
                 current_point % (preset_measure_times / 4) == 1)
         {
+            Serial.println("changing point entered");
             gripper_stepper.run_by_angle((float) (90 - PRESET_ANGLE_BETWEEN_TWO_MEASUREMENT), true);
             gripper_release();
             gripper_stepper.run_by_angle(0, false);
@@ -194,19 +197,29 @@ void gripper_position_fruit(int current_point)
             gripper_grip();
             gripper_valve.mid_position();
         }
-        else gripper_stepper.run_by_angle((float)PRESET_ANGLE_BETWEEN_TWO_MEASUREMENT, true);
+        else 
+        {
+            Serial.println("other point entered");
+            gripper_stepper.run_by_angle((float)PRESET_ANGLE_BETWEEN_TWO_MEASUREMENT, true);
+        }
     }
     else
     {
-        if (current_point = 1)
+        Serial.println("(%4 != 0) point: " + String(current_point));
+        if (current_point == 1)
         {
+            Serial.println("point 1 entered");
             gripper_valve.position_A();
             while (check_trigger(GRIPPER_DETECT_CONTACT_SWITCH_PIN_1) == false || 
                 check_trigger(GRIPPER_DETECT_CONTACT_SWITCH_PIN_2) == false) 
                 vTaskDelay(10 / portTICK_PERIOD_MS);
             gripper_valve.mid_position();
         }
-        else gripper_stepper.run_by_angle((float)PRESET_ANGLE_BETWEEN_TWO_MEASUREMENT, true);
+        else 
+        {
+            gripper_stepper.run_by_angle((float)PRESET_ANGLE_BETWEEN_TWO_MEASUREMENT, true);
+            Serial.println("other point entered");
+        }
     }
 }
 

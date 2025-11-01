@@ -174,10 +174,10 @@ class myStepper
 
         void home(bool homing_dir)
         {
-            digitalWrite(enable_pin, LOW);
+            digitalWrite(enable_pin, HIGH);
             Serial.println("Homing...");
 
-            digitalWrite(dir_pin, homing_dir ? HIGH : LOW);
+            digitalWrite(dir_pin, homing_dir ? LOW : HIGH);
 
             while (digitalRead(home_switch_pin) == HIGH)
             {
@@ -212,6 +212,7 @@ class myStepper
 
         void run_by_angle(float angle_deg, bool is_relative = false)
         {
+            Serial.println("run by angle" + String(angle_deg));
             long step = (angle_deg / 360.0f) * steps_per_rev;
 
             if (is_relative)
