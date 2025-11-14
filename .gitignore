@@ -1,0 +1,9 @@
+High-level-control/venv_3_11/
+High-level-control/__pycache__/
+High-level-control/wrappers/__pycache__/
+High-level-control/output/
+High-level-control/dist/
+High-level-control/build/
+High-level-control/test/
+High-level-control/presets/presets.txt
+High-level-control/CitrusSortingApp.exe
