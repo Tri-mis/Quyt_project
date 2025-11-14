@@ -19,7 +19,7 @@ import joblib
 import sys
 
 if getattr(sys, 'frozen', False):
-    BASE_DIR = os.path.dirname(sys.executable)  # running as .exe
+    BASE_DIR = os.path.dirname(sys.executable)
 else:
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -32,7 +32,6 @@ OUTPUT_DIR = os.path.join(BASE_DIR, "output")
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 # ----- Configuration file handling -----
-os.path.join(MODELS_DIR, "citrus_brix_model.pkl")
 PRESET_FILENAME = os.path.join(PRESETS_DIR, "presets.txt")
 
 # ----- Prediction model and preprocessing -----
@@ -346,7 +345,7 @@ class CitrusSortingApp:
             except Exception as e:
                 enqueue_log(f"[PC -> LOG] Exception when starting NIR USB: {e}")
             try:
-                self.nir.fetch_reference()
+                self.nir.fetch_reference(file_dir=PRESETS_DIR)
             except:
                 enqueue_log("[PC -> LOG] Cannot load reference")
         except Exception as e:
@@ -571,7 +570,7 @@ class CitrusSortingApp:
         self.root.after(0, lambda: self._update_plot(wavelength, spec, y_label))
 
         # One temp file per fruit: temp_f{fruit_id}.csv
-        save_folder = Path(self.save_data_path.get() or os.getcwd())
+        save_folder = Path(self.save_data_path.get())
         save_folder.mkdir(parents=True, exist_ok=True)
         temp_path = save_folder / f"temp_f{fruit_id}.csv"
 
@@ -641,7 +640,7 @@ class CitrusSortingApp:
     def _process_measure_passed_all(self, fruit_id):
         """Combine temp rows (one file per fruit), choose type and move final file into yy/mm/dd folder."""
         enqueue_log(f"[PC -> LOG] Processing completed measurements for fruit {fruit_id} ...")
-        folder = Path(self.save_data_path.get() or os.getcwd())
+        folder = Path(self.save_data_path.get())
 
         # find temp file(s) for this fruit (legacy could have multiples)
         temp_files = list(folder.glob(f"temp_f{fruit_id}*.csv"))
@@ -666,13 +665,14 @@ class CitrusSortingApp:
 
         # make prediction and decide fruit type
         brix, fruit_type = self._brix_prediction(combined_df, 2)
+        brix_scaled = round(brix * 100)
 
         # prepare date folder as "date_yy_mm_dd" under save folder
         date_dir = folder / f"date_{time.strftime('%y')}_{time.strftime('%m')}_{time.strftime('%d')}"
         date_dir.mkdir(parents=True, exist_ok=True)
 
-        # final name: citrux_{fruit_id}_{fruit_type}.csv (overwrite allowed)
-        final_name = f"citrux_{fruit_id}_{fruit_type}.csv"
+        # final name: citrux_{fruit_id}_{brix_scaled}_{fruit_type}.csv (overwrite allowed)
+        final_name = f"citrux_{fruit_id}_{brix_scaled}_{fruit_type}.csv"
         final_path = date_dir / final_name
 
         try:

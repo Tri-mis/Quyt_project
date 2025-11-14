@@ -1,0 +1,3 @@
+========================= 11:19 - 14/11/25 =========================
+- I fix the model always predicting 8.54 problem. It turns out that I cant embeded relative path for the NIR_wrapper.py to load the reference scan because that will make it dependent on the its original relative path, and when I run the script that import it in a new folder, things break. The solution is changing the wrapper to take the path as input to functions, not hardcoded.
+- I still have the problem of silent crashes on latte panda. This can be caused by serial communication to the ESP32. Its either the USB from latte panda does not provide enough current or the ESP32 has minor crashes in UART task. I will check it later.

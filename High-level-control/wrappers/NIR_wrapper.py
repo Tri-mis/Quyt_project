@@ -3,8 +3,7 @@ from .nanoapi_function_wrapper import *
 import time
 import matplotlib.pyplot as plt
 import numpy as np
-
-base_dir = os.path.dirname(__file__)
+import csv
 
 class NIR_SPECTROMETER:
     def __init__(self):
@@ -48,7 +47,7 @@ class NIR_SPECTROMETER:
     def stop_USB_communication(self):
         return USB_Stop()
   
-    def perform_ref_cal_scan(self, save_reference_in_nir_eeprom = False, num_repeats = 32, pgaGain = 64):
+    def perform_ref_cal_scan(self, save_reference_in_nir_eeprom = False, file_dir = None, num_repeats = 32, pgaGain = 16):
 
         old_pgaGain = self.pgaGain
         old_num_repeats = self.scan_config.num_repeats
@@ -57,8 +56,6 @@ class NIR_SPECTROMETER:
         if save_reference_in_nir_eeprom:
 
             self.perform_scan()
-            
-
             NNO_UpdateRefCalDataWithWORefl()
             NNO_SaveRefCalPerformed()
 
@@ -66,12 +63,11 @@ class NIR_SPECTROMETER:
         else:
             self.perform_scan()
 
-            filename = os.path.join(base_dir, "..", "presets", "reference_scan_result.csv")
+            if file_dir == None:
+                raise ValueError("File dir must not be None if reference scan saved in pc")
+            filename = os.path.join(file_dir,"reference_scan_result.csv")
             wavelength = list(self.scan_result.wavelength)
             intensity = list(self.scan_result.intensity)
-            '''
-            with open(filename, "wb") as f:
-                f.write(string_at(addressof(self.scan_result), sizeof(self.scan_result)))'''
             
             with open(filename, "w") as f:
                 f.write(",".join(str(x) for x in wavelength) + "\n")
@@ -82,7 +78,7 @@ class NIR_SPECTROMETER:
         self.pgaGain = old_pgaGain
         self.scan_config.num_repeats = old_num_repeats
 
-    def fetch_reference(self, fetch_reference_from_nir_eeprom = False):
+    def fetch_reference(self, fetch_reference_from_nir_eeprom = False, file_dir = None):
 
         if fetch_reference_from_nir_eeprom:
 
@@ -92,7 +88,7 @@ class NIR_SPECTROMETER:
             self.ref_cal_scan = create_string_buffer(self.ref_cal_scan_byte.value)
             self.ref_cal_scan = cast(self.ref_cal_scan, POINTER(c_ubyte))
             NNO_GetFile(self.ref_cal_scan, self.ref_cal_scan_byte)
-            
+
             #Read the reference calibration matrix
             self.ref_cal_matrix_byte = c_int()
             self.ref_cal_matrix_byte.value = NNO_GetFileSizeToRead(NNO_FILE_TYPE.NNO_FILE_REF_CAL_MATRIX)
@@ -107,35 +103,33 @@ class NIR_SPECTROMETER:
             print("fetch reference from nir eeprom")
         else:
             
-            filename = os.path.join(base_dir, "..", "presets", "reference_scan_result.csv")
+            if file_dir == None:
+                raise ValueError("File dir must not be None if reference scan saved in pc")
+            filename = os.path.join(file_dir, "reference_scan_result.csv")
 
             try:
-                with open(filename, "r") as f:
-                    raw_data = f.read()
-                    rows = list(raw_data)
+                with open(filename, "r", newline='') as f:
+                    reader = csv.reader(f)
+                    rows = list(reader)
 
-                    if len(rows) < 2:
-                        raise ValueError("CSV must have at least 2 rows: wavelengths and intensities")
-                    
-                    wavelength_values = [float(x) for x in rows[0]]
-                    intensity_values = [int(x) for x in rows[1]]
-                    length = len(wavelength_values)
-                    # Fill the ScanResults arrays
-                    for i in range(min(length, len(self.ref_scan_result.wavelength))):
-                        self.ref_scan_result.wavelength[i] = c_double(wavelength_values[i])
+                if len(rows) < 2:
+                    raise ValueError("CSV must have at least 2 rows: wavelengths and intensities")
 
-                    for i in range(min(length, len(self.ref_scan_result.intensity))):
-                        self.ref_scan_result.intensity[i] = c_int(intensity_values[i])
+                # Convert strings to numbers
+                wavelength_values = [float(x) for x in rows[0]]
+                intensity_values = [float(x) for x in rows[1]]  # or int(x) if you saved as int
 
-                    # Copy the binary data directly into ref_scan_result
-                    self.use_reference_from_nir_eeprom = False
-                    print(f"Reference loaded from {filename}")
+                # Fill the ScanResults arrays
+                length = min(len(wavelength_values), len(self.ref_scan_result.wavelength))
+                for i in range(length):
+                    self.ref_scan_result.wavelength[i] = c_double(wavelength_values[i])
+                    self.ref_scan_result.intensity[i] = c_int(int(intensity_values[i]))
 
             except FileNotFoundError:
                 print(f"Error: {filename} not found. Please perform a reference scan first.")
 
-            self.use_reference_from_nir_eeprom = False
-            print("fetch reference from csv file")
+                self.use_reference_from_nir_eeprom = False
+                print("fetch reference from csv file")
 
     def data_cal(self):
 
@@ -217,7 +211,7 @@ class NIR_SPECTROMETER:
         if plot_sample_intensity == True:
             # --- Sample Intensity ---
             plt.figure()
-            plt.plot(self.wavelength[:125], self.sample_intensity[:125])
+            plt.plot(self.wavelength, self.sample_intensity)
             plt.title("Sample Intensity Spectrum")
             plt.xlabel("Wavelength (nm)")
             plt.ylabel("Intensity (a.u.)")
@@ -226,7 +220,7 @@ class NIR_SPECTROMETER:
         if plot_reflectance == True:
             # --- Reflectance ---
             plt.figure()
-            plt.plot(self.wavelength[:125], self.reflectance[:125])
+            plt.plot(self.wavelength, self.reflectance)
             plt.title("Reflectance Spectrum")
             plt.xlabel("Wavelength (nm)")
             plt.ylabel("Reflectance")
@@ -235,7 +229,7 @@ class NIR_SPECTROMETER:
         if plot_absorbance == True:
             # --- Absorbance ---
             plt.figure()
-            plt.plot(self.wavelength[:125], self.absorbance[:125])
+            plt.plot(self.wavelength, self.absorbance)
             plt.title("Absorbance Spectrum")
             plt.xlabel("Wavelength (nm)")
             plt.ylabel("Absorbance (log₁₀ scale)")
