@@ -73,14 +73,14 @@ The executable **depends on the relative paths** to the `models/` and `presets/`
 3.  Copy the **entire** `models/` folder and the **entire** `presets/` folder from the project source into your new folder.
 
 The final directory structure for running the app **must** look like this:
-    /YourAppFolder 
-    |-- CitrusSortingApp.exe 
-    |-- models/ 
-    |   |-- citrus_brix_model.pkl 
-    |   |-- citrus_brix_scaler.pkl 
-    |-- presets/ 
-    |   |-- presets.txt 
-    |   |-- reference_scan_result.csv
+    /YourAppFolder
+    ├─ CitrusSortingApp.exe
+    ├─ models/
+    │ ├─ citrus_brix_model.pkl
+    │ └─ citrus_brix_scaler.pkl
+    ├─ presets/
+    │ ├─ presets.txt
+    │ └─ reference_scan_result.csv
 
 4.  Double-click `CitrusSortingApp.exe` to run the application.
 
@@ -94,7 +94,7 @@ The `reference_scan_result.csv` is a crucial file for calculating reflectance. I
 
 1.  Use the NIR spectrometer's official GUI software to perform a scan with whiteout reflectance.
 2.  Export the scan result.
-3.  Reformat the data into a CSV file containing **only one row** of data (no headers) corresponding to wavelengths 900nm to 1700nm.
+3.  Reformat the data into a CSV file containing **two rows** of data corresponding to wavelengths 900nm to 1700nm and their intensities
 4.  Replace the old `presets/reference_scan_result.csv` with your new file.
 
 ### Method 2: Using the Python Script
