@@ -117,128 +117,144 @@ class CitrusSortingApp:
         self.scaler = joblib.load(SCALER_PATH)
 
     def _build_ui(self):
-        # main two-column container
-        frm_main = ttk.Frame(self.root, padding=8)
+        # === Main wrapper ===
+        # <-- BORDER ADDED
+        frm_main = ttk.Frame(self.root, padding=8, borderwidth=1, relief="solid")
         frm_main.pack(fill="both", expand=True)
 
-        # left column: controls / log
-        left_width = 500  # tweak this value to make control panel wider/narrower
-        frm_left = ttk.Frame(frm_main, padding=8, width=left_width)
-        frm_left.pack(side="left", fill="y")
-        frm_left.pack_propagate(False)  # keep width
+        # --- Top row: frm_top ---
+        # <-- BORDER ADDED
+        frm_top = ttk.Frame(frm_main, borderwidth=1, relief="solid")
+        frm_top.pack(fill="x", expand=True)
 
-        separator = ttk.Frame(frm_main, width=2)  # remove style
-        separator.pack(side="left", fill="y", padx=4)
-        separator.config(relief="solid")  # or use bg="black" for a visible line
+        # Left = controls
+        # <-- BORDER ADDED
+        frm_left = ttk.Frame(frm_top, padding=8, width=800, borderwidth=1, relief="solid")
+        frm_left.pack(side="left", anchor="n")
+        
+        # Divider
+        divider = ttk.Separator(frm_top, orient="vertical")
+        divider.pack(side="left", fill="y", padx=5)
 
-        # right column: graph
-        frm_right = ttk.Frame(frm_main, padding=(50, 20, 20, 20))
-        frm_right.pack(side="right", fill="both", expand=True)
+        # Right = graph
+        # <-- BORDER ADDED
+        frm_right = ttk.Frame(frm_top, padding=(20, 20, 20, 20), width = 800, borderwidth=1, relief="solid")
+        frm_right.pack(side="left", fill="both", expand=True)
+        frm_right.pack_propagate(False)
 
-        # --- Controls placed in left column ---
-        frm_top = ttk.Frame(frm_left)
-        frm_top.pack(fill="x")
-        frm_top.columnconfigure(0, weight=1)
+        divider = ttk.Separator(frm_main, orient="horizontal")
+        # Changed side to "bottom" so it appears *before* the bottom frame
+        divider.pack(side="bottom", fill="x", padx=5, pady=5)
+
+        # === BOTTOM ROW (log only) ===
+        # <-- BORDER ADDED
+        frm_bottom = ttk.Frame(frm_main, padding=(8, 8, 8, 8), borderwidth=1, relief="solid")
+        frm_bottom.pack(side="bottom", fill="x")
+
+        # -------------------------------------------------------
+        # ------- PLACE ALL LEFT-SIDE CONTROLS IN frm_left --
+        # -------------------------------------------------------
+
+        frm_controls = ttk.Frame(frm_left)
+        frm_controls.pack(fill="x")
+        frm_controls.columnconfigure(0, weight=1)
 
         r = 0
-        # checkbox (single-line)
-        chk = ttk.Checkbutton(frm_top, text="Save measured data", variable=self.save_measured_data)
-        chk.grid(row=r, column=0, sticky="w")
-        chk.grid(row=r, column=0, sticky="w", pady=(20, 20))
+        chk = ttk.Checkbutton(frm_controls, text="Save measured data",
+                            variable=self.save_measured_data)
+        chk.grid(row=r, column=0, sticky="w", pady=(20,20))
         r += 1
 
-        # Save data path: label above entry
-        ttk.Label(frm_top, text="Save data path:").grid(row=r, column=0, sticky="w", pady=(8,2))
+        ttk.Label(frm_controls, text="Save data path:").grid(row=r, column=0, sticky="w", pady=(8,2))
         r += 1
-        ent_path = ttk.Entry(frm_top, textvariable=self.save_data_path, width=40)
-        ent_path.grid(row=r, column=0, columnspan=2, sticky="we")
-        ttk.Button(frm_top, text="Browse", command=self._browse_save_path).grid(row=r, column=2, padx=4, sticky="w")
+        ent_path = ttk.Entry(frm_controls, textvariable=self.save_data_path, width=40)
+        ent_path.grid(row=r, column=0, sticky="we")
+        ttk.Button(frm_controls, text="Browse", command=self._browse_save_path)\
+            .grid(row=r, column=1, padx=4, sticky="w")
         r += 1
 
-        # Preset measure times: label above entry
-        ttk.Label(frm_top, text="Preset measure times:").grid(row=r, column=0, sticky="w", pady=(8,2))
+        ttk.Label(frm_controls, text="Preset measure times:").grid(row=r, column=0, sticky="w", pady=(8,2))
         r += 1
-        ent_times = ttk.Entry(frm_top, textvariable=self.preset_measure_times, width=12)
+        ent_times = ttk.Entry(frm_controls, textvariable=self.preset_measure_times, width=12)
         ent_times.grid(row=r, column=0, sticky="w")
         r += 1
 
-        # Current fruit number: label above entry
-        ttk.Label(frm_top, text="Current fruit number:").grid(row=r, column=0, sticky="w", pady=(8,2))
+        ttk.Label(frm_controls, text="Current fruit number:").grid(row=r, column=0, sticky="w", pady=(8,2))
         r += 1
-        ent_first = ttk.Entry(frm_top, textvariable=self.current_fruit_number, width=12)
-        ent_first.grid(row=r, column=0, sticky="w")
-        ent_first.grid(row=r, column=0, sticky="w", pady = (0,20))
+        ent_first = ttk.Entry(frm_controls, textvariable=self.current_fruit_number, width=12)
+        ent_first.grid(row=r, column=0, sticky="w", pady=(0,20))
         r += 1
 
-        # Conveyor speed: label above slider and show current value in label text
-        self._speed_label_var = tk.StringVar(value=f"Preset conveyor speed: {self.preset_conveyor_speed.get()}%")
-        ttk.Label(frm_top, textvariable=self._speed_label_var).grid(row=r, column=0, sticky="w", pady=(8,2))
+        # Slider & speed label row
+        self._speed_label_var = tk.StringVar(
+            value=f"Preset conveyor speed: {self.preset_conveyor_speed.get()}%"
+        )
+        ttk.Label(frm_controls, textvariable=self._speed_label_var)\
+            .grid(row=r, column=0, sticky="w", pady=(8,2))
         r += 1
-        sld = ttk.Scale(frm_top, from_=0, to=100, variable=self.preset_conveyor_speed, orient="horizontal", length=220)
-        sld.grid(row=r, column=0, columnspan=2, sticky="we")
-        sld.grid(row=r, column=0, columnspan=2, sticky="we", pady = (0,20))
-        # update label whenever slider value changes
+
+        sld = ttk.Scale(frm_controls, from_=0, to=100,
+                        variable=self.preset_conveyor_speed, orient="horizontal", length=220)
+        sld.grid(row=r, column=0, sticky="we", pady=(0,20))
         try:
-            self.preset_conveyor_speed.trace_add("write", lambda *a: self._speed_label_var.set(
-                f"Preset conveyor speed: {self.preset_conveyor_speed.get()}%"))
+            self.preset_conveyor_speed.trace_add("write",
+                lambda *a: self._speed_label_var.set(
+                    f"Preset conveyor speed: {self.preset_conveyor_speed.get()}%"
+            ))
         except Exception:
-            self.preset_conveyor_speed.trace("w", lambda *a: self._speed_label_var.set(
-                f"Preset conveyor speed: {self.preset_conveyor_speed.get()}%"))
+            self.preset_conveyor_speed.trace("w",
+                lambda *a: self._speed_label_var.set(
+                    f"Preset conveyor speed: {self.preset_conveyor_speed.get()}%"
+            ))
         r += 1
 
-        # start/stop buttons
+        # Buttons
         frm_btn = ttk.Frame(frm_left, padding=(0,8,0,0))
         frm_btn.pack(fill="x")
         self.btn_start = ttk.Button(frm_btn, text="START", command=self._on_start, width=12)
         self.btn_start.grid(row=0, column=0, padx=4, pady=20, ipadx=10, ipady=5)
-
-        self.btn_stop = ttk.Button(frm_btn, text="STOP", command=self._on_stop, state="disabled", width=12)
+        self.btn_stop = ttk.Button(frm_btn, text="STOP", command=self._on_stop,
+                                state="disabled", width=12)
         self.btn_stop.grid(row=0, column=1, padx=4, pady=20, ipadx=10, ipady=5)
 
-        # LEDs moved below the start/stop buttons so they appear on the next line
+        # LEDs
         frm_led = ttk.Frame(frm_left, padding=(0,4,0,8))
         frm_led.pack(fill="x")
         ttk.Label(frm_led, text="ESP32:").grid(row=0, column=0, sticky="w")
         self.canvas_esp_led = tk.Canvas(frm_led, width=20, height=20, highlightthickness=0)
         self.esp_led_item = self.canvas_esp_led.create_oval(2,2,18,18, fill="red")
-        self.canvas_esp_led.grid(row=0, column=1, padx=(4,12), pady = 20)
-        ttk.Label(frm_led, text="NIR:").grid(row=0, column=2, sticky="w", padx= (30,0))
+        self.canvas_esp_led.grid(row=0, column=1, padx=(4,12), pady=20)
+
+        ttk.Label(frm_led, text="NIR:").grid(row=0, column=2, sticky="w", padx=(30,0))
         self.canvas_nir_led = tk.Canvas(frm_led, width=20, height=20, highlightthickness=0)
         self.nir_led_item = self.canvas_nir_led.create_oval(2,2,18,18, fill="red")
-        self.canvas_nir_led.grid(row=0, column=3, padx=4, pady = 20)
+        self.canvas_nir_led.grid(row=0, column=3, padx=4, pady=20)
 
-        # Log display (smaller)
-        frm_log = ttk.Frame(frm_left, padding=(0,8,0,0))
-        frm_log.pack(fill="both", expand=True)
-        ttk.Label(frm_log, text="Log:").pack(anchor="w")
-        self.txt_log = scrolledtext.ScrolledText(frm_log, height=6, state="disabled", wrap="none")
-        self.txt_log.pack(fill="both", expand=True)
-
-        # Radio buttons placed under the plot on the right side, centered
+        # Radio buttons under the graph
         frm_radio_right = ttk.Frame(frm_right, padding=(4,8,4,4))
         frm_radio_right.pack(side="bottom", fill="x")
-        
-        self.data_type = tk.IntVar(value=1)  # 1 intensity, 2 reflectance, 3 absorbance
-        
-        # Use a sub-frame to hold label + radios
+        self.data_type = tk.IntVar(value=1)
         inner_frame = ttk.Frame(frm_radio_right)
-        inner_frame.pack(anchor="center")  # center the contents horizontally
-        
+        inner_frame.pack(anchor="center")
         ttk.Label(inner_frame, text="Plot data:").pack(side="left", padx=(0,8))
         ttk.Radiobutton(inner_frame, text="Intensity", variable=self.data_type, value=1).pack(side="left", padx=6)
         ttk.Radiobutton(inner_frame, text="Reflectance", variable=self.data_type, value=2).pack(side="left", padx=6)
         ttk.Radiobutton(inner_frame, text="Absorbance", variable=self.data_type, value=3).pack(side="left", padx=6)
 
-
-        # --- Graph placed in right column ---
-        # use constrained_layout to let matplotlib reserve space for labels automatically
-        self.fig = Figure(figsize=(5,5), constrained_layout=True)
+        # Graph on right
+        self.fig = Figure(figsize=(3,4), constrained_layout=True)
         self.ax = self.fig.add_subplot(111)
         self.ax.set_title("Spectrum")
         self.ax.set_xlabel("Wavelength")
         self.ax.set_ylabel("Intensity")
         self.canvas = FigureCanvasTkAgg(self.fig, master=frm_right)
-        self.canvas.get_tk_widget().pack(fill="both", expand=True)
+        self.canvas.get_tk_widget().pack(fill="both", expand = False)
+
+        # LOG on bottom row
+        ttk.Label(frm_bottom, text="Log:").pack(anchor="w")
+        # --- FIXED TYPO: heigh -> height ---
+        self.txt_log = scrolledtext.ScrolledText(frm_bottom, height=15, state="disabled", wrap="none")
+        self.txt_log.pack(fill="both", expand=True)
 
     def _browse_save_path(self):
         p = filedialog.askdirectory(initialdir=self.save_data_path.get() or os.getcwd())
@@ -300,7 +316,7 @@ class CitrusSortingApp:
         brix_pred = self.model.predict(avg_values)[0]
 
         # type decision
-        fruit_type = 1 if brix_pred >= 7 else 2
+        fruit_type = 1 if brix_pred >= 25 else 2
 
         return brix_pred, fruit_type
 
@@ -411,7 +427,7 @@ class CitrusSortingApp:
             try:
                 b = (text + "\n").encode("utf-8")
                 self.esp_serial.write(b)
-                enqueue_log(f"[PC -> LOG] {text}")  # local log of sending
+                enqueue_log(f"[PC -> ESP] {text}")  # local log of sending
             except Exception as e:
                 enqueue_log(f"[PC -> LOG] Failed to send to ESP: {e}")
         else:
@@ -469,8 +485,6 @@ class CitrusSortingApp:
         # Expected: <fruit_id>|<state>|<payload>
         try:
             parts = msg.split("|")
-            if len(parts) < 3:
-                return
             fruit_id = parts[0]
             state = parts[1]
             payload = parts[2]
@@ -493,14 +507,14 @@ class CitrusSortingApp:
                 threading.Thread(target=self._process_measure_passed_all,
                                  args=(fruit_id,), daemon=True).start()
             else:
-                # other states ignored for now
+                enqueue_log(f"[ESP -> PC] {msg}")
                 pass
         except Exception as e:
             enqueue_log(f"[PC -> LOG] Error parsing ESP message: {e}")
 
     def _process_measure_point(self, fruit_id, current_point):
         """Perform NIR scan, update plot, and append this point to a single temp file per fruit."""
-        enqueue_log(f"[PC -> LOG] Starting measurement for fruit {fruit_id} point {current_point}")
+        # enqueue_log(f"[PC -> LOG] Starting measurement for fruit {fruit_id} point {current_point}")
         if not self.nir:
             enqueue_log("[PC -> LOG] NIR object not available; skipping measurement")
             self._send_to_esp(f"{fruit_id}|MEASURE_PROCESSING|{current_point}")
@@ -609,7 +623,6 @@ class CitrusSortingApp:
                 writer.writerow(intensity_row)
                 writer.writerow(reflectance_row)
                 writer.writerow(absorbance_row)
-            enqueue_log(f"[PC -> LOG] Appended 3 measurement rows to {temp_path}")
         except Exception as e:
             enqueue_log(f"[PC -> LOG] Failed to write temp file {temp_path}: {e}")
 
@@ -618,7 +631,7 @@ class CitrusSortingApp:
 
     def _update_plot(self, wavelength, spec, y_label):
         self.ax.clear()
-        self.ax.plot(wavelength, spec)
+        self.ax.plot(wavelength[:125], spec[:125])
         self.ax.set_title("Spectrum", fontsize=11)
         self.ax.set_xlabel("Wavelength", fontsize=10, labelpad=8)
         self.ax.set_ylabel(y_label, fontsize=10)
@@ -679,11 +692,11 @@ class CitrusSortingApp:
             if combined_df is not None:
                 # write combined dataframe directly to final path (overwrites existing)
                 combined_df.to_csv(final_path, index=False)
-                enqueue_log(f"[PC -> LOG] Saved combined measurements as {final_path}")
+                enqueue_log(f"[PC -> LOG] Saved combined measurements")
             else:
                 # fallback: move the first temp file to final path (overwrite)
                 temp_files[0].replace(final_path)
-                enqueue_log(f"[PC -> LOG] Saved measurement as {final_path}")
+                enqueue_log(f"[PC -> LOG] Saved measurement")
             # remove any remaining temp files (if we wrote combined_df, delete originals)
             for f in temp_files:
                 try:
@@ -703,7 +716,7 @@ class CitrusSortingApp:
             fid = int(fruit_id)
             self.current_fruit_number.set(fid + 1)
             self._persist_presets()
-            enqueue_log(f"[PC -> LOG] Updated initial fruit number to {self.current_fruit_number.get()}")
+            # enqueue_log(f"[PC -> LOG] Updated current fruit number to {self.current_fruit_number.get()}")
         except Exception:
             # if fruit_id is not integer, ignore update
             pass
