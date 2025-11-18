@@ -204,7 +204,55 @@ def NNO_SaveRefCalPerformed():
     if ret < 0:
         nano_print_error_code("NNO_SaveRefCalPerformed", ret)
 
+# =========================== NNO_DLPCEnable ===========================
+
+dll.NNO_DLPCEnable.argtypes = [c_bool, c_bool]
+dll.NNO_DLPCEnable.restype = c_int
+
+def NNO_DLPCEnable(enable, enable_lamp):
+
+    if not isinstance(enable, c_bool):
+        raise TypeError(f"enable must be c_bool, got {type(enable)}")
+    if not isinstance(enable_lamp, c_bool):
+        raise TypeError(f"enable_lamp must be c_bool, got {type(enable_lamp)}")
+
+    ret = dll.NNO_DLPCEnable(enable, enable_lamp)
+
+    if ret < 0:
+        nano_print_error_code("NNO_DLPCEnable", ret)
+    
+    return ret
+
+# =========================== NNO_SetScanControlsDLPCOnOff ===========================
+
+dll.NNO_SetScanControlsDLPCOnOff.argtypes = [c_bool]
+dll.NNO_SetScanControlsDLPCOnOff.restype = c_int
+
+def NNO_SetScanControlsDLPCOnOff(enable):
+
+    if not isinstance(enable, c_bool):
+        raise TypeError(f"enable must be c_bool, got {type(enable)}")
+
+    ret = dll.NNO_SetScanControlsDLPCOnOff(enable)
+
+    if ret < 0:
+        nano_print_error_code("NNO_SetScanControlsDLPCOnOff", ret)
+    
+    return ret
 
 
+# =========================== NNO_SetScanNumRepeats ===========================
+dll.NNO_SetScanNumRepeats.argtypes = [c_uint16]
+dll.NNO_SetScanNumRepeats.restype = c_int
 
+def NNO_SetScanNumRepeats(num_repeats):
 
+    if not isinstance(num_repeats, c_uint16):
+        raise TypeError(f"enable must be c_uint16, got {type(num_repeats)}")
+
+    ret = dll.NNO_SetScanNumRepeats(num_repeats)
+
+    if ret < 0:
+        nano_print_error_code("NNO_SetScanNumRepeats", ret)
+    
+    return ret

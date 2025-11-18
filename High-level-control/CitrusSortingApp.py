@@ -116,6 +116,19 @@ class CitrusSortingApp:
         self.model = joblib.load(MODEL_PATH)
         self.scaler = joblib.load(SCALER_PATH)
 
+        # time debug
+        self.start_time = None
+        self.end_time = None
+    
+    def _get_start_time(self):
+        self.start_time = time.perf_counter()
+
+    def _get_end_time(self):
+        self.end_time = time.perf_counter()
+
+    def _print_elapse_time(self, msg):
+        enqueue_log(f"{msg}: {self.end_time - self.start_time}")
+
     def _build_ui(self):
         # === Main wrapper ===
         # <-- BORDER ADDED
@@ -354,16 +367,35 @@ class CitrusSortingApp:
                     enqueue_log("[PC -> LOG] NIR wrapper has no start_USB_communication()")
                 if ok:
                     self.nir_connected = True
-                    self._set_nir_led(True)
+                    # Schedule the UI update on the main thread
+                    self.root.after(0, lambda: self._set_nir_led(True)) # <-- FIXED
                     enqueue_log("[PC -> LOG] NIR connected")
                 else:
                     enqueue_log(f"[PC -> LOG] NIR did not respond {ok}")
             except Exception as e:
                 enqueue_log(f"[PC -> LOG] Exception when starting NIR USB: {e}")
+
+            try:
+                self.nir.allow_nir_control_lamp_onoff(control_onoff_every_scan=False)
+            except:
+                enqueue_log("[PC -> LOG] Cannot turn off DLPC and lamp after scan")
+            try: 
+                self.nir.enable_dlp_subsystem(enable_subsystem=True, lamp_on=True)
+            except:
+                enqueue_log("[PC -> LOG] Cannot enable DLP")
+            try:
+                self.nir.overwrite_PGAGain(pgaGain = 16)
+            except:
+                enqueue_log("[PC -> LOG] Cannot set fixed PGAGain")
             try:
                 self.nir.fetch_reference(file_dir=PRESETS_DIR)
             except:
                 enqueue_log("[PC -> LOG] Cannot load reference")
+            try:
+                self.nir.apply_scan_config()
+            except:
+                enqueue_log("[PC -> LOG] Cannot apply scan config")
+
         except Exception as e:
             enqueue_log(f"[PC -> LOG] Unexpected NIR init error: {e}")
 
@@ -460,7 +492,8 @@ class CitrusSortingApp:
                         if s.lower() == "awake":
                             handshake_done = True
                             self.esp_connected = True
-                            self._set_esp_led(True)
+                            # Schedule the UI update on the main thread
+                            self.root.after(0, lambda: self._set_esp_led(True))
                             enqueue_log(f"[ESP -> PC] {s}")  # log the awake line and start logging thereafter
                             # After handshake, continue to handle the message if it matches expected format
                             try:
@@ -491,7 +524,7 @@ class CitrusSortingApp:
             if state == "MEASURE_PROCESSING":
                 # payload is current measure point (string)
                 try:
-                    current_point = int(payload)
+                    current_point = float(payload)
                 except:
                     current_point = 0
                 if current_point > 0:
@@ -502,17 +535,17 @@ class CitrusSortingApp:
                 else:
                     # just informational
                     pass
-            elif state == "MEASURE_PASSED" and payload == "-1":
+            elif state == "MEASURE_PASSED":
                 # indicates all points measured; we should run ANN sim
                 threading.Thread(target=self._process_measure_passed_all,
                                  args=(fruit_id,), daemon=True).start()
             else:
-                enqueue_log(f"[ESP -> PC] {msg}")
                 pass
         except Exception as e:
             enqueue_log(f"[PC -> LOG] Error parsing ESP message: {e}")
 
     def _process_measure_point(self, fruit_id, current_point):
+
         """Perform NIR scan, update plot, and append this point to a single temp file per fruit."""
         # enqueue_log(f"[PC -> LOG] Starting measurement for fruit {fruit_id} point {current_point}")
         if not self.nir:
@@ -628,7 +661,7 @@ class CitrusSortingApp:
 
         # Echo back to ESP
         self._send_to_esp(f"{fruit_id}|MEASURE_PROCESSING|{current_point}")
-
+        
     def _update_plot(self, wavelength, spec, y_label):
         self.ax.clear()
         self.ax.plot(wavelength[:125], spec[:125])
@@ -649,6 +682,15 @@ class CitrusSortingApp:
                 pass
         # final draw
         self.canvas.draw_idle()
+
+    def _update_fruit_number_and_persist(self, new_fruit_id):
+        """Helper to update fruit number and save presets from the main thread."""
+        try:
+            self.current_fruit_number.set(new_fruit_id)
+            self._persist_presets()
+            # enqueue_log(f"[PC -> LOG] Updated current fruit number to {new_fruit_id}")
+        except Exception as e:
+            enqueue_log(f"[PC -> LOG] Error updating fruit number: {e}")
 
     def _process_measure_passed_all(self, fruit_id):
         """Combine temp rows (one file per fruit), choose type and move final file into yy/mm/dd folder."""
@@ -712,11 +754,12 @@ class CitrusSortingApp:
         enqueue_log(f"[PC -> LOG] Fruit: {fruit_id} | Brix: {brix} | Type: {fruit_type}")
 
         # update presets: set current_fruit_number to the next fruit (fruit_id + 1) and persist
+        # update presets: set current_fruit_number to the next fruit (fruit_id + 1) and persist
         try:
             fid = int(fruit_id)
-            self.current_fruit_number.set(fid + 1)
-            self._persist_presets()
-            # enqueue_log(f"[PC -> LOG] Updated current fruit number to {self.current_fruit_number.get()}")
+            new_id = fid + 1
+            # Schedule the UI update and preset save on the main thread
+            self.root.after(0, lambda: self._update_fruit_number_and_persist(new_id)) # <-- FIXED
         except Exception:
             # if fruit_id is not integer, ignore update
             pass
@@ -780,19 +823,6 @@ class CitrusSortingApp:
                 messagebox.showwarning("NIR not connected", "NIR did not respond. Check connection and try again.")
                 self.btn_start.configure(state="normal", text="RESTART")
                 return
-
-            # wait briefly for NIR init and update LED
-            start = time.time()
-            while time.time() - start < 6:
-                if getattr(self, "nir_connected", False):
-                    try:
-                        self._set_nir_led(True)
-                    except Exception:
-                        pass
-                    break
-                time.sleep(0.1)
-            else:
-                enqueue_log("[PC -> LOG] NIR did not initialize within timeout.")
 
             # reset button text
             self.btn_start.configure(text="START")

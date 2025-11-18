@@ -15,8 +15,8 @@ class NIR_SPECTROMETER:
                         config_name= b'TestScan',
                         wavelength_start_nm = 900,
                         wavelength_end_nm = 1700,
-                        width_px = 8,
-                        num_patterns = 255,
+                        width_px = 7,
+                        num_patterns = 228,
                         num_repeats = 6)
         self.scan_result = ScanResults()
         self.pgaGain = 16
@@ -46,6 +46,18 @@ class NIR_SPECTROMETER:
     
     def stop_USB_communication(self):
         return USB_Stop()
+    
+    def enable_dlp_subsystem(self, enable_subsystem: bool, lamp_on: bool):
+        enable_subsystem = c_bool(enable_subsystem)
+        lamp_on = c_bool(lamp_on)
+        return NNO_DLPCEnable(enable_subsystem, lamp_on)
+    
+    def allow_nir_control_lamp_onoff(self, control_onoff_every_scan: bool):
+        control_onoff_every_scan = c_bool(control_onoff_every_scan)
+        return NNO_SetScanControlsDLPCOnOff(control_onoff_every_scan)
+    
+    def overwrite_PGAGain(self, pgaGain = 16):
+        NNO_SetFixedPGAGain(c_bool(True), c_uint8(pgaGain))
   
     def perform_ref_cal_scan(self, save_reference_in_nir_eeprom = False, file_dir = None, num_repeats = 32, pgaGain = 16):
 
@@ -153,8 +165,7 @@ class NIR_SPECTROMETER:
             self.reflectance = np.where(self.ref_intensity != 0, self.sample_intensity / self.ref_intensity, 0)
             self.absorbance = -np.log10(np.clip(self.reflectance, 1e-8, None))
 
-    def perform_scan(self):
-
+    def apply_scan_config(self):
         # Turn to UscanConfig
         uscan_config = UScanConfig(scanCfg = self.scan_config)
 
@@ -171,47 +182,68 @@ class NIR_SPECTROMETER:
 
         # ApplyScanConfig to NIR
         NNO_ApplyScanConfig(uscan_config_buf, c_int(dump_size.value))
-        
-        # Optionally set PGA gain
-        NNO_SetFixedPGAGain(c_bool(True), c_uint8(self.pgaGain))
-        
-        # Get estimated time out
-        estimated_scan_time = NNO_GetEstimatedScanTime() * 3
-        start_scan_time = time.time() * 1000
 
-        # PerformScan
+        
+    def perform_scan(self):
+        
+        # Convert estimated scan time (ms → seconds) like GUI
+        estimated_scan_time_sec = NNO_GetEstimatedScanTime() * 3 / 1000.0
+
+        # Use wall clock time 
+        start_time = time.time()
+
+        # Set scan time
+        NNO_SetScanNumRepeats(c_uint16(self.scan_config.num_repeats))
+
+        # Perform Scan
         NNO_PerformScan(c_bool(False))
 
-        # Oscationally check status
+        # Occasionally check status
         status = c_uint32()
         while True:
             NNO_ReadDeviceStatus(pointer(status))
+
+            # Scan completed
             if (status.value & NNO_STATUS_SCAN_IN_PROGRESS) != NNO_STATUS_SCAN_IN_PROGRESS:
                 break
-            if ((time.time() * 1000 - start_scan_time)  > estimated_scan_time):
+
+            # Timeout
+            if (time.time() - start_time) > estimated_scan_time_sec:
                 print("Scan failed - Timeout")
                 break
 
-        # Read the number of byte in scan data
+            time.sleep(0.05)  # very important
+
+        scan_time_sec = time.time() - start_time
+
+        # Read the number of bytes in scan data
         scan_data_byte = c_int()
         scan_data_byte.value = NNO_GetFileSizeToRead(NNO_FILE_TYPE.NNO_FILE_SCAN_DATA)
 
-        # Read the raw data
+        # Read raw data
         scan_data_buf = create_string_buffer(scan_data_byte.value)
         scan_data_buf = cast(scan_data_buf, POINTER(c_ubyte))
         NNO_GetFile(scan_data_buf, scan_data_byte)
 
-        # Cast scan data to ScanResult struct
+        # Interpret scan result
         self.scan_result = ScanResults()
         scan_data_buf = cast(scan_data_buf, c_void_p)
-        dlpspec_scan_interpret(scan_data_buf, c_size_t(scan_data_byte.value), pointer(self.scan_result))
+        dlpspec_scan_interpret(
+            scan_data_buf,
+            c_size_t(scan_data_byte.value),
+            pointer(self.scan_result)
+        )
+
+        # Total scan time
+        print(f"scan_time: {scan_time_sec:.3f} seconds")
+
 
     def plot_result(self, plot_sample_intensity = False, plot_reflectance = False, plot_absorbance = False):
         
         if plot_sample_intensity == True:
             # --- Sample Intensity ---
             plt.figure()
-            plt.plot(self.wavelength, self.sample_intensity)
+            plt.plot(self.wavelength[:125], self.sample_intensity[:125])
             plt.title("Sample Intensity Spectrum")
             plt.xlabel("Wavelength (nm)")
             plt.ylabel("Intensity (a.u.)")
@@ -220,7 +252,7 @@ class NIR_SPECTROMETER:
         if plot_reflectance == True:
             # --- Reflectance ---
             plt.figure()
-            plt.plot(self.wavelength, self.reflectance)
+            plt.plot(self.wavelength[:125], self.reflectance[:125])
             plt.title("Reflectance Spectrum")
             plt.xlabel("Wavelength (nm)")
             plt.ylabel("Reflectance")
@@ -229,7 +261,7 @@ class NIR_SPECTROMETER:
         if plot_absorbance == True:
             # --- Absorbance ---
             plt.figure()
-            plt.plot(self.wavelength, self.absorbance)
+            plt.plot(self.wavelength[:125], self.absorbance[:125])
             plt.title("Absorbance Spectrum")
             plt.xlabel("Wavelength (nm)")
             plt.ylabel("Absorbance (log₁₀ scale)")
