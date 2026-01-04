@@ -428,7 +428,7 @@ class CitrusSortingApp:
             except:
                 enqueue_log("[PC -> LOG] fetch_reference failed")
             try:
-                self.nir.apply_scan_config()
+                self.nir.set_active_scan(0)
             except:
                 enqueue_log("[PC -> LOG] apply_scan_config failed")
 
@@ -565,8 +565,10 @@ class CitrusSortingApp:
                     current_point = 0
                 if current_point > 0:
                     # perform scan and processing
+                    date_dir = Path(self.save_data_path.get()) / f"date_{time.strftime('%y')}_{time.strftime('%m')}_{time.strftime('%d')}"
+                    date_dir.mkdir(parents=True, exist_ok=True)
                     threading.Thread(target=self._process_measure_point,
-                                     args=(fruit_id, current_point),
+                                     args=(fruit_id, current_point, date_dir),
                                      daemon=True).start()
                 else:
                     # just informational
@@ -580,7 +582,7 @@ class CitrusSortingApp:
         except Exception as e:
             enqueue_log(f"[PC -> LOG] Error parsing ESP message: {e}")
 
-    def _process_measure_point(self, fruit_id, current_point):
+    def _process_measure_point(self, fruit_id, current_point, date_dir):
 
         """Perform NIR scan, update plot, and append this point to a single temp file per fruit."""
         # enqueue_log(f"[PC -> LOG] Starting measurement for fruit {fruit_id} point {current_point}")
@@ -697,7 +699,45 @@ class CitrusSortingApp:
 
         # Echo back to ESP
         self._send_to_esp(f"{fruit_id}|MEASURE_PROCESSING|{current_point}")
-        
+
+        # Save individual measurement files in `point_measure_files` folder
+        if self.save_measured_data.get():
+            try:
+                # Ensure the date folder and point_measure_files folder exist before saving
+                date_dir.mkdir(parents=True, exist_ok=True)
+                point_folder = date_dir / "point_measure_files"
+                point_folder.mkdir(parents=True, exist_ok=True)
+
+                # Generate file name in the format T001V001A-04-01-2026.csv
+                fruit_id_str = f"T{int(fruit_id):03d}"
+                measure_point = int(current_point)
+                area = chr(65 + (measure_point - 1) // 3)  # A, B, C...
+                point_in_area = (measure_point - 1) % 3 + 1
+                date_str = time.strftime("%d-%m-%Y")
+                point_file_name = f"{fruit_id_str}V{point_in_area:03d}{area}_{date_str}.csv"
+                point_file_path = point_folder / point_file_name
+
+                # Prepare data for the file
+                point_header = ["Wavelength (nm)", "Absorbance (AU)", "Reference Signal (unitless)", "Sample Signal (unitless)"]
+                point_data = zip(wavelength, absorbance, reflectance, sample_intensity)
+
+                # Debug logs to verify data before writing
+                #enqueue_log(f"[DEBUG] Point file path: {point_file_path}")
+                #enqueue_log(f"[DEBUG] Point data: {list(point_data)}")
+
+                # Reset point_data iterator after logging
+                point_data = zip(wavelength, absorbance, reflectance, sample_intensity)
+
+                # Write to individual point file
+                with open(point_file_path, "w", newline="", encoding="utf-8") as csvf:
+                    writer = csv.writer(csvf)
+                    writer.writerow(point_header)
+                    writer.writerows(point_data)
+
+                #enqueue_log(f"[PC -> LOG] Saved individual measurement to {point_file_path}")
+            except Exception as e:
+                enqueue_log(f"[PC -> LOG] Failed to save individual measurement file: {e}")
+
     def _update_plot(self, wavelength, spec, y_label):
         self.ax.clear()
         self.ax.plot(wavelength[:125], spec[:125])
@@ -762,9 +802,17 @@ class CitrusSortingApp:
         date_dir = folder / f"date_{time.strftime('%y')}_{time.strftime('%m')}_{time.strftime('%d')}"
         date_dir.mkdir(parents=True, exist_ok=True)
 
+        # grand_files subfolder
+        grand_files_dir = date_dir / "grand_files"
+        grand_files_dir.mkdir(parents=True, exist_ok=True)
+
+        # point_measure_files subfolder
+        point_measure_files_dir = date_dir / "point_measure_files"
+        point_measure_files_dir.mkdir(parents=True, exist_ok=True)
+
         # final name: citrux_{fruit_id}_{brix_scaled}_{fruit_type}.csv (overwrite allowed)
         final_name = f"citrux_{fruit_id}_{brix_scaled}_{fruit_type}.csv"
-        final_path = date_dir / final_name
+        final_path = grand_files_dir / final_name
 
         try:
             if combined_df is not None:
