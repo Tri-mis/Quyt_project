@@ -248,11 +248,40 @@ dll.NNO_SetScanNumRepeats.restype = c_int
 def NNO_SetScanNumRepeats(num_repeats):
 
     if not isinstance(num_repeats, c_uint16):
-        raise TypeError(f"enable must be c_uint16, got {type(num_repeats)}")
+        raise TypeError(f"num_repeats must be c_uint16, got {type(num_repeats)}")
 
     ret = dll.NNO_SetScanNumRepeats(num_repeats)
 
     if ret < 0:
         nano_print_error_code("NNO_SetScanNumRepeats", ret)
     
+    return ret
+
+
+# =========================== NNO_SetActiveScanIndex ===========================
+dll.NNO_SetActiveScanIndex.argtypes = [c_uint8]
+dll.NNO_SetActiveScanIndex.restype = c_int
+
+def NNO_SetActiveScanIndex(index):
+    if not isinstance(index, c_uint8):
+        raise TypeError(f"index must be c_uint8, got {type(index)}")
+    
+    ret = dll.NNO_SetActiveScanIndex(index)
+
+    if ret < 0:
+        nano_print_error_code("NNO_SetActiveScanIndex", ret)
+
+    return ret
+
+
+# =========================== NNO_GetActiveScanIndex ===========================
+dll.NNO_GetActiveScanIndex.argtypes = []
+dll.NNO_GetActiveScanIndex.restype = c_int
+
+def NNO_GetActiveScanIndex():
+    ret = dll.NNO_GetActiveScanIndex()
+    
+    if ret < 0:
+        nano_print_error_code('NNO_GetActiveScanIndex', ret)
+
     return ret

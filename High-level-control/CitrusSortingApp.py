@@ -17,6 +17,40 @@ from matplotlib.figure import Figure
 import ttkbootstrap as tb
 import joblib
 import sys
+import numpy as np
+from scipy.signal import savgol_filter
+from sklearn.preprocessing import MinMaxScaler
+
+
+
+# ======================== Preprocessing ========================
+#----------------------MMAD--------------------------------
+def MMAD(X, axis=1):
+    med = np.median(X, axis=axis, keepdims=True)
+    mad = np.median(np.abs(X - med), axis=axis, keepdims=True)
+    mad[mad == 0] = 1
+    X_rnv = (X - med) / mad
+    return X_rnv
+
+#----------------------SaVGolFilter--------------------------------
+def SaVGolFilter(X, windows_length=35, polyorder=3, deriv=1):
+    X= pd.DataFrame(X).dropna()
+    X.fillna(X.mean(), inplace=True)
+    X= savgol_filter(X, windows_length, polyorder=polyorder, deriv=deriv)
+    X= pd.DataFrame(np.array(X))
+    X = X.values if isinstance (X,pd.DataFrame) else X
+    return X
+
+#----------------------MinMaxScaler--------------------------------
+def MinMaxScaler_Preprocessing(X):
+    X = pd.DataFrame(X).dropna()
+    X.fillna(X.mean(), inplace=True)
+    scaler_mm = MinMaxScaler()    
+    X = scaler_mm.fit_transform(X)
+    X = pd.DataFrame(np.array(X))
+    X = X.values if isinstance(X, pd.DataFrame) else X
+    return X, scaler_mm
+
 
 if getattr(sys, 'frozen', False):
     BASE_DIR = os.path.dirname(sys.executable)
@@ -324,6 +358,8 @@ class CitrusSortingApp:
 
         # preprocessing
         avg_values = self.scaler.transform(avg_values)
+        avg_values = MMAD(avg_values, axis = 1)
+        avg_values = SaVGolFilter(avg_values)
 
         # make prediction
         brix_pred = self.model.predict(avg_values)[0]
@@ -378,23 +414,23 @@ class CitrusSortingApp:
             try:
                 self.nir.allow_nir_control_lamp_onoff(control_onoff_every_scan=False)
             except:
-                enqueue_log("[PC -> LOG] Cannot turn off DLPC and lamp after scan")
+                enqueue_log("[PC -> LOG] allow_nir_control_lamp_onoff() failed")
             try: 
-                self.nir.enable_dlp_subsystem(enable_subsystem=True, lamp_on=True)
+                self.nir.enable_dlp_subsystem(enable_subsystem=True, lamp_on=False)
             except:
-                enqueue_log("[PC -> LOG] Cannot enable DLP")
+                enqueue_log("[PC -> LOG] enable_dlp_subsystem() failed")
             try:
                 self.nir.overwrite_PGAGain(pgaGain = 16)
             except:
-                enqueue_log("[PC -> LOG] Cannot set fixed PGAGain")
+                enqueue_log("[PC -> LOG] overwrite_PGAGain failed")
             try:
                 self.nir.fetch_reference(file_dir=PRESETS_DIR)
             except:
-                enqueue_log("[PC -> LOG] Cannot load reference")
+                enqueue_log("[PC -> LOG] fetch_reference failed")
             try:
                 self.nir.apply_scan_config()
             except:
-                enqueue_log("[PC -> LOG] Cannot apply scan config")
+                enqueue_log("[PC -> LOG] apply_scan_config failed")
 
         except Exception as e:
             enqueue_log(f"[PC -> LOG] Unexpected NIR init error: {e}")

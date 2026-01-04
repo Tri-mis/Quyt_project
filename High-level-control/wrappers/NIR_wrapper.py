@@ -58,7 +58,13 @@ class NIR_SPECTROMETER:
     
     def overwrite_PGAGain(self, pgaGain = 16):
         NNO_SetFixedPGAGain(c_bool(True), c_uint8(pgaGain))
-  
+
+    def get_active_scan_index(self):
+        return NNO_GetActiveScanIndex()
+    
+    def set_active_scan(self, index):
+        NNO_SetActiveScanIndex(c_uint8(index))
+    
     def perform_ref_cal_scan(self, save_reference_in_nir_eeprom = False, file_dir = None, num_repeats = 32, pgaGain = 16):
 
         old_pgaGain = self.pgaGain
@@ -186,7 +192,7 @@ class NIR_SPECTROMETER:
         
     def perform_scan(self):
         
-        # Convert estimated scan time (ms → seconds) like GUI
+        # Convert estimated scan time (ms → seconds)
         estimated_scan_time_sec = NNO_GetEstimatedScanTime() * 3 / 1000.0
 
         # Use wall clock time 
